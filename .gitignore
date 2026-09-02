@@ -1,0 +1,22 @@
+# ---- Compiled binaries ----
+/evernote
+/evernote.exe
+capstone.exe
+/bin/
+/out/
+
+# ---- Course material: specs, briefs and screenshots (kept local, not published) ----
+Important_Capstone/
+
+# ---- Local configuration — never commit real secrets ----
+.env
+.env.local
+
+# ---- Test and coverage artefacts ----
+*.out
+coverage.html
+
+# ---- Editor and OS noise ----
+.DS_Store
+.idea/
+.vscode/
