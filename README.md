@@ -87,11 +87,40 @@ Base path `/api/v1`. Protected endpoints require `Authorization: Bearer <token>`
 | `POST` | `/api/v1/auth/login` | — | Exchange credentials for a token |
 | `POST` | `/api/v1/auth/logout` | yes | Revoke the presented token |
 | `GET` | `/api/v1/me` | yes | The authenticated user's profile |
+| `GET` | `/api/v1/notes` | yes | List your notes — see query parameters below |
+| `POST` | `/api/v1/notes` | yes | Create a note |
+| `GET` | `/api/v1/notes/:id` | yes | Read a note you own |
+| `PUT` | `/api/v1/notes/:id` | yes | Update a note, all fields optional |
+| `DELETE` | `/api/v1/notes/:id` | yes | Soft-delete a note |
+| `GET` | `/api/v1/tags` | yes | Every tag used across your notes |
+
+#### Listing query parameters
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `q` | — | Full-text search across title and body |
+| `tag` | — | Filter to one tag; case-insensitive |
+| `page` | `1` | |
+| `limit` | `20` | Maximum 100 |
+| `sort` | `-updated_at` | `created_at` or `updated_at`, `-` prefix for descending |
+
+```
+GET /api/v1/notes?q=milk&tag=shopping&page=2&limit=10&sort=-created_at
+```
+
+```json
+{
+  "data": [ { "id": "...", "title": "...", "tags": ["shopping"], "...": "..." } ],
+  "meta": { "page": 2, "limit": 10, "total": 34 }
+}
+```
+
+`meta.total` is the size of the whole result set, not of the page, so a client
+can work out how many pages there are.
 
 ### Planned
 
-`GET|POST /notes`, `GET|PUT|DELETE /notes/:id`, `GET /tags`,
-`POST /notes/:id/share`, and the public `GET /s/:share_token`.
+`POST /notes/:id/share` and the public `GET /s/:share_token`.
 
 ### Errors
 
@@ -135,13 +164,24 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
   expired anyway, so the collection stays bounded.
 - If the revocation check cannot reach the database the request is refused
   rather than allowed, so logout fails closed.
+- Every note endpoint resolves ownership through one shared code path, so the
+  rule cannot drift between verbs. Reading, updating or deleting somebody
+  else's note returns `403`; an unknown ID returns `404`.
+- Notes are soft-deleted, so a deleted note is recoverable and a share link
+  pointing at one still resolves to a document rather than a dangling
+  reference.
+- The `sort` parameter is matched against an allowlist rather than passed
+  through to MongoDB, so a caller cannot sort by a field the API does not
+  expose, and every sort is one the indexes support.
+- Listing is scoped by `owner_id` inside the query itself, not by filtering
+  results afterwards.
 
 ## Roadmap
 
 1. **Foundation and auth** — layout, config, MongoDB, error envelope, bcrypt,
    JWT, auth middleware, signup/login/logout/me. **Complete.**
-2. Notes CRUD with ownership enforcement.
-3. Listing, full-text search, tag filtering, pagination and sorting.
+2. **Notes CRUD with ownership enforcement.** **Complete.**
+3. **Listing, full-text search, tag filtering, pagination and sorting.** **Complete.**
 4. Public share links with an optional password and optional expiry.
 5. Logging, CORS and rate-limiting middleware.
 6. Tests, Dockerfile and AWS deployment.

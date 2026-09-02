@@ -40,12 +40,14 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	userRepo := db.NewUserRepo(mongoClient.DB)
 	revokedRepo := db.NewRevokedTokenRepo(mongoClient.DB)
+	noteRepo := db.NewNoteRepo(mongoClient.DB)
 
 	authHandler := handlers.NewAuthHandler(userRepo, revokedRepo, cfg)
 	healthHandler := handlers.NewHealthHandler(mongoClient)
+	noteHandler := handlers.NewNoteHandler(noteRepo)
 
 	app := &App{cfg: cfg, mongo: mongoClient}
-	app.Router = app.buildRouter(authHandler, healthHandler, revokedRepo)
+	app.Router = app.buildRouter(authHandler, healthHandler, noteHandler, revokedRepo)
 	return app, nil
 }
 
@@ -53,6 +55,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 func (a *App) buildRouter(
 	auth *handlers.AuthHandler,
 	health *handlers.HealthHandler,
+	notes *handlers.NoteHandler,
 	revoked *db.RevokedTokenRepo,
 ) *gin.Engine {
 	router := gin.New()
@@ -75,6 +78,16 @@ func (a *App) buildRouter(
 		}
 
 		v1.GET("/me", requireAuth, auth.Me)
+		v1.GET("/tags", requireAuth, notes.Tags)
+
+		noteGroup := v1.Group("/notes", requireAuth)
+		{
+			noteGroup.GET("", notes.List)
+			noteGroup.POST("", notes.Create)
+			noteGroup.GET("/:id", notes.Get)
+			noteGroup.PUT("/:id", notes.Update)
+			noteGroup.DELETE("/:id", notes.Delete)
+		}
 	}
 
 	return router

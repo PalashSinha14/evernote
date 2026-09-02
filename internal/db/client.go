@@ -66,13 +66,16 @@ func (c *Client) Disconnect(ctx context.Context) error {
 // safe to repeat and means a fresh database is correctly shaped without a
 // separate migration step.
 //
-// Later phases add the notes and shares indexes here.
+// Later phases add the shares indexes here.
 func (c *Client) EnsureIndexes(ctx context.Context) error {
 	if err := ensureUserIndexes(ctx, c.DB); err != nil {
 		return fmt.Errorf("users indexes: %w", err)
 	}
 	if err := ensureRevokedTokenIndexes(ctx, c.DB); err != nil {
 		return fmt.Errorf("revoked_tokens indexes: %w", err)
+	}
+	if err := ensureNoteIndexes(ctx, c.DB); err != nil {
+		return fmt.Errorf("notes indexes: %w", err)
 	}
 	return nil
 }
