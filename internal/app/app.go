@@ -62,23 +62,40 @@ func (a *App) buildRouter(
 	revoked *db.RevokedTokenRepo,
 ) *gin.Engine {
 	router := gin.New()
-	router.Use(gin.Recovery())
+
+	// No proxy is trusted by default. Gin's ClientIP() would otherwise trust
+	// an X-Forwarded-For header from anyone, letting a caller spoof the
+	// address the rate limiter keys on and step around its own limit. Behind
+	// a real load balancer in Phase 6's AWS deployment, this needs revisiting
+	// to trust that balancer specifically — see the known limitations in the
+	// explain document.
+	_ = router.SetTrustedProxies(nil)
+
+	// Order matters. Logger is outermost so it still logs a request that
+	// panicked: Recovery converts the panic into a normal return before
+	// control passes back up to it. Recovery comes next so every handler
+	// downstream is protected, including CORS and the routes themselves.
+	router.Use(middleware.Logger(), middleware.Recovery(), middleware.CORS(a.cfg.AllowedOrigins))
 
 	// requireAuth is applied per route group rather than globally, because
 	// GET /s/:token below must stay reachable by a visitor with no account at
 	// all — that is the entire point of a share link.
 	requireAuth := middleware.RequireAuth(a.cfg.JWTSecret, revoked)
 
+	// One rate limiter, shared across the two surfaces api_spec.md's security
+	// notes name explicitly: auth and public share access.
+	rateLimit := middleware.NewRateLimiter(a.cfg.RateLimitRequests, a.cfg.RateLimitWindow).Middleware()
+
 	router.GET("/healthz", health.Healthz)
 
 	// The one public, unauthenticated read path in the service. It lives
 	// outside /api/v1 because api_spec.md defines it there: GET /s/:token,
 	// not GET /api/v1/s/:token.
-	router.GET("/s/:token", shares.Access)
+	router.GET("/s/:token", rateLimit, shares.Access)
 
 	v1 := router.Group("/api/v1")
 	{
-		authGroup := v1.Group("/auth")
+		authGroup := v1.Group("/auth", rateLimit)
 		{
 			authGroup.POST("/signup", auth.Signup)
 			authGroup.POST("/login", auth.Login)

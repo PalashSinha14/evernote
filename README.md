@@ -73,6 +73,9 @@ committed.
 | `JWT_EXPIRY` | `1h` | Any Go duration |
 | `BCRYPT_COST` | `12` | Minimum 10 |
 | `APP_BASE_URL` | `http://localhost:8080` | Used to build share URLs |
+| `CORS_ALLOWED_ORIGINS` | `*` | Comma-separated, or `*` for any origin |
+| `RATE_LIMIT_REQUESTS` | `20` | Per caller, per window, on auth + `/s/:token` |
+| `RATE_LIMIT_WINDOW` | `1m` | Any Go duration |
 
 ## API
 
@@ -212,6 +215,17 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
   dangling reference is never counted as a read.
 - `share_id` in the create-share response is the share's own database id, not
   the token. The token is exposed exactly once, embedded in `url`.
+- Every panic is caught and returned in the same error envelope as every other
+  failure, rather than Gin's bare 500 with no body.
+- No proxy is trusted by default (`SetTrustedProxies(nil)`), so a caller
+  cannot spoof the IP address the rate limiter keys on via a forged
+  `X-Forwarded-For` header.
+- `RATE_LIMIT_REQUESTS`/`RATE_LIMIT_WINDOW` apply to exactly the two surfaces
+  api_spec.md's security notes name: the auth endpoints and public share
+  access — both reachable with no token at all.
+- CORS defaults to a wildcard origin, which is safe specifically because this
+  API authenticates with a bearer token rather than a cookie; wildcard CORS
+  alongside cookie-based auth would be a different, much riskier story.
 
 ## Roadmap
 
@@ -220,5 +234,5 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
 2. **Notes CRUD with ownership enforcement.** **Complete.**
 3. **Listing, full-text search, tag filtering, pagination and sorting.** **Complete.**
 4. **Public share links with an optional password and optional expiry.** **Complete.**
-5. Logging, CORS and rate-limiting middleware.
+5. **Logging, CORS, rate limiting and envelope-consistent panic recovery.** **Complete.**
 6. Tests, Dockerfile and AWS deployment.

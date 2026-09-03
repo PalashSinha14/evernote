@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,19 @@ type Config struct {
 	JWTExpiry  time.Duration
 	BcryptCost int
 	AppBaseURL string
+
+	// AllowedOrigins is the set of origins the CORS middleware permits. "*"
+	// means any origin, which is a safe default here specifically because
+	// authentication is a bearer token in an Authorization header rather than
+	// a cookie — unlike cookie-based auth, a wildcard origin combined with
+	// token auth does not expose the API to cross-site request forgery.
+	AllowedOrigins []string
+
+	// RateLimitRequests and RateLimitWindow bound how many requests one
+	// caller may make in one window against the endpoints api_spec.md's
+	// security notes name explicitly: auth and public share access.
+	RateLimitRequests int
+	RateLimitWindow   time.Duration
 }
 
 // Load reads configuration from the environment, applying defaults where the
@@ -60,7 +74,40 @@ func Load() (*Config, error) {
 	}
 	cfg.BcryptCost = cost
 
+	cfg.AllowedOrigins = splitCSV(env("CORS_ALLOWED_ORIGINS", "*"))
+
+	rateLimit, err := strconv.Atoi(env("RATE_LIMIT_REQUESTS", "20"))
+	if err != nil {
+		return nil, fmt.Errorf("RATE_LIMIT_REQUESTS is not a number: %w", err)
+	}
+	if rateLimit <= 0 {
+		return nil, errors.New("RATE_LIMIT_REQUESTS must be positive")
+	}
+	cfg.RateLimitRequests = rateLimit
+
+	rateWindow, err := time.ParseDuration(env("RATE_LIMIT_WINDOW", "1m"))
+	if err != nil {
+		return nil, fmt.Errorf("RATE_LIMIT_WINDOW is not a valid duration: %w", err)
+	}
+	if rateWindow <= 0 {
+		return nil, errors.New("RATE_LIMIT_WINDOW must be positive")
+	}
+	cfg.RateLimitWindow = rateWindow
+
 	return cfg, nil
+}
+
+// splitCSV parses a comma-separated environment value into a trimmed,
+// non-empty slice.
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // env returns the environment variable named by key, or fallback when it is
