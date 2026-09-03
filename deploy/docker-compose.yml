@@ -1,0 +1,56 @@
+# Local development stack: the API plus a MongoDB instance, wired together.
+#
+# Run from the repository root:
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# This file, rather than one at the repository root, is where
+# folder_structure.md places Docker Compose: /deploy holds deployment
+# manifests, kept apart from the application source it deploys.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # The app pings Mongo exactly once at startup and fails fast if that
+      # ping doesn't succeed — see internal/db/client.go — so the app
+      # container must not start until Mongo is actually ready to accept
+      # connections, not merely that its process has begun.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      MONGO_URI: "mongodb://mongo:27017"
+      MONGO_DB: "evernote_lite"
+      # A throwaway default for local Compose use only — real deployments
+      # must override this. There is no way to make this file both runnable
+      # out of the box and free of any secret-shaped value; the trade is
+      # made in favour of "docker compose up just works" for local
+      # development, where this key protects nothing of consequence.
+      JWT_SECRET: "local-development-secret-change-me"
+      JWT_EXPIRY: "1h"
+      BCRYPT_COST: "12"
+      APP_BASE_URL: "http://localhost:8080"
+      CORS_ALLOWED_ORIGINS: "*"
+      RATE_LIMIT_REQUESTS: "20"
+      RATE_LIMIT_WINDOW: "1m"
+
+volumes:
+  mongo_data:

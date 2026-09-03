@@ -8,6 +8,11 @@ read-only share link that works without an account.
 Backend only: there is no frontend. The deliverable is the API, its data model,
 and the operational scaffolding around it.
 
+**Status: feature-complete.** All six phases of the roadmap below are done —
+auth, notes CRUD, search and tagging, public sharing, middleware hardening,
+and tests/Docker/deployment artifacts. The one open item is listed under
+[Testing](#testing): nothing has yet been run against a real MongoDB instance.
+
 ## Stack
 
 | Piece | Used for |
@@ -59,6 +64,33 @@ The service refuses to start without `JWT_SECRET`, with a `BCRYPT_COST` below
 10, or when MongoDB is unreachable — a misconfiguration fails at boot rather
 than on the first request. Required indexes are created on startup.
 
+### Running it with Docker
+
+```bash
+make docker-up      # API + MongoDB together, for local development
+make docker-down     # stop and remove them
+```
+
+This runs [deploy/docker-compose.yml](deploy/docker-compose.yml), which builds
+the image from the root [Dockerfile](Dockerfile) and starts it against a
+throwaway local MongoDB container — no `.env` needed for this path, since the
+compose file supplies development defaults itself (see the file for why
+`JWT_SECRET` there is a fixed, clearly-labelled placeholder rather than a
+generated one). The API waits for MongoDB's own health check to pass before it
+starts, rather than for the container to merely exist.
+
+### Makefile targets
+
+```bash
+make build        # compile ./bin/evernote-lite
+make run           # go run the server locally
+make test          # go test ./...
+make test-race     # go test -race ./...
+make lint          # gofmt -l + go vet
+make tidy          # go mod tidy
+make docker-build  # build the container image only
+```
+
 ### Configuration
 
 All settings come from the environment; nothing is hardcoded and no secret is
@@ -81,7 +113,7 @@ committed.
 
 Base path `/api/v1`. Protected endpoints require `Authorization: Bearer <token>`.
 
-### Available now
+### Endpoints
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -226,6 +258,52 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
 - CORS defaults to a wildcard origin, which is safe specifically because this
   API authenticates with a bearer token rather than a cookie; wildcard CORS
   alongside cookie-based auth would be a different, much riskier story.
+- The Docker image is built in two stages, so nothing in the final image is
+  the Go toolchain or source tree — only the compiled binary. It runs as a
+  non-root user, and no secret is baked into any layer; every setting arrives
+  at container start, from the environment.
+
+## Testing
+
+```bash
+go test ./...          # everything
+go test -race ./...     # with the race detector — clean as of Phase 6
+```
+
+Every handler-level test runs against a fake, in-memory store through the
+real Gin router and, where relevant, the real `RequireAuth` middleware — so
+routing, JSON binding, validation, ownership rules, status codes and the
+error envelope are all exercised without MongoDB. [tests/auth_test.go](tests/auth_test.go),
+[tests/notes_access_test.go](tests/notes_access_test.go),
+[tests/shares_access_test.go](tests/shares_access_test.go) and
+[tests/middleware_test.go](tests/middleware_test.go) cover the four handler
+groups; `internal/utils` and `internal/config` carry their own unit tests
+alongside their source, in the usual Go convention.
+
+**What this does not prove:** none of it has run against a real MongoDB. The
+bson tags, the five index specifications, `$text` search, `Distinct`,
+`FindOneAndUpdate`'s `ReturnDocument(After)`, and the unique index shares'
+whole design depends on have been verified by reading, not by running. See
+`~/Desktop/evernote_explain.txt` (or ask the maintainer) for the full list of
+what remains open.
+
+## Deployment
+
+[Dockerfile](Dockerfile) and [deploy/docker-compose.yml](deploy/docker-compose.yml)
+cover local development. [deploy/ecs-task-definition.json](deploy/ecs-task-definition.json)
+and [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md) walk through a real AWS ECS
+Fargate deployment — building and pushing the image to ECR, storing
+`JWT_SECRET` and `MONGO_URI` in Secrets Manager rather than as plain
+environment values, and the one code change ([app.go](internal/app/app.go)'s
+`SetTrustedProxies` call) that needs revisiting once a load balancer sits in
+front of the service. None of those steps have been run against a real AWS
+account from here — they touch billing and shared infrastructure, so they are
+written to be run and checked by a person, not executed automatically.
+
+`scripts/init-indexes.sh` creates the same indexes the application already
+creates on every boot, standalone, for pre-warming a production database
+ahead of a deploy — see the script's own header for why this is optional
+rather than required.
 
 ## Roadmap
 
@@ -235,4 +313,4 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
 3. **Listing, full-text search, tag filtering, pagination and sorting.** **Complete.**
 4. **Public share links with an optional password and optional expiry.** **Complete.**
 5. **Logging, CORS, rate limiting and envelope-consistent panic recovery.** **Complete.**
-6. Tests, Dockerfile and AWS deployment.
+6. **Unit and handler tests, Docker, and AWS deployment artifacts.** **Complete.**

@@ -1,0 +1,24 @@
+# Course material and screenshots — never belongs in an image.
+Important_Capstone/
+
+# Local secrets and build artefacts.
+.env
+.env.local
+evernote
+evernote.exe
+capstone.exe
+
+# Version control and editor/OS noise.
+.git/
+.gitignore
+.DS_Store
+.idea/
+.vscode/
+
+# Nothing here is needed inside the image; the build stage only needs the Go
+# source and go.mod/go.sum.
+tests/
+docs/
+deploy/
+scripts/
+*.md

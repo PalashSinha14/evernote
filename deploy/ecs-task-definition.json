@@ -1,0 +1,53 @@
+{
+  "family": "evernote-lite",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "evernote-lite",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/evernote-lite:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8080, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "PORT", "value": "8080" },
+        { "name": "MONGO_DB", "value": "evernote_lite" },
+        { "name": "JWT_EXPIRY", "value": "1h" },
+        { "name": "BCRYPT_COST", "value": "12" },
+        { "name": "APP_BASE_URL", "value": "https://<YOUR_DOMAIN_OR_ALB_DNS_NAME>" },
+        { "name": "CORS_ALLOWED_ORIGINS", "value": "*" },
+        { "name": "RATE_LIMIT_REQUESTS", "value": "20" },
+        { "name": "RATE_LIMIT_WINDOW", "value": "1m" }
+      ],
+      "secrets": [
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:evernote-lite/jwt-secret"
+        },
+        {
+          "name": "MONGO_URI",
+          "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:evernote-lite/mongo-uri"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/evernote-lite",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "evernote-lite"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      }
+    }
+  ]
+}

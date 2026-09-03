@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/PalashSinha14/evernote/internal/config"
 	"github.com/PalashSinha14/evernote/internal/db"
@@ -14,15 +16,34 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// UserStore is the slice of the users repository AuthHandler needs.
+//
+// Depending on this rather than *db.UserRepo directly is what lets the auth
+// endpoints be exercised in tests/auth_test.go against a fake store, with no
+// MongoDB required — the same pattern NoteStore and ShareStore already use.
+type UserStore interface {
+	Create(ctx context.Context, u *models.User) error
+	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	FindByID(ctx context.Context, id string) (*models.User, error)
+	TouchLastLogin(ctx context.Context, id bson.ObjectID) error
+}
+
+// RevocationStore is the slice of the revoked-token repository AuthHandler
+// needs to log a token out. It is the write side of the same collection
+// middleware.RevocationChecker reads from.
+type RevocationStore interface {
+	Revoke(ctx context.Context, jti string, userID bson.ObjectID, expiresAt time.Time) error
+}
+
 // AuthHandler serves signup, login, logout and the profile endpoint.
 type AuthHandler struct {
-	users   *db.UserRepo
-	revoked *db.RevokedTokenRepo
+	users   UserStore
+	revoked RevocationStore
 	cfg     *config.Config
 }
 
 // NewAuthHandler wires an AuthHandler to its dependencies.
-func NewAuthHandler(users *db.UserRepo, revoked *db.RevokedTokenRepo, cfg *config.Config) *AuthHandler {
+func NewAuthHandler(users UserStore, revoked RevocationStore, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{users: users, revoked: revoked, cfg: cfg}
 }
 
