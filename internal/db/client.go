@@ -21,6 +21,8 @@ var (
 	ErrNotFound = errors.New("resource not found")
 	// ErrDuplicateEmail means a unique index on users.email rejected a write.
 	ErrDuplicateEmail = errors.New("email already registered")
+	// ErrDuplicateToken means a unique index on shares.token rejected a write.
+	ErrDuplicateToken = errors.New("share token collision")
 )
 
 // Client wraps the Mongo connection and the handful of things the application
@@ -65,8 +67,6 @@ func (c *Client) Disconnect(ctx context.Context) error {
 // that already exists with the same specification is left alone, so this is
 // safe to repeat and means a fresh database is correctly shaped without a
 // separate migration step.
-//
-// Later phases add the shares indexes here.
 func (c *Client) EnsureIndexes(ctx context.Context) error {
 	if err := ensureUserIndexes(ctx, c.DB); err != nil {
 		return fmt.Errorf("users indexes: %w", err)
@@ -76,6 +76,9 @@ func (c *Client) EnsureIndexes(ctx context.Context) error {
 	}
 	if err := ensureNoteIndexes(ctx, c.DB); err != nil {
 		return fmt.Errorf("notes indexes: %w", err)
+	}
+	if err := ensureShareIndexes(ctx, c.DB); err != nil {
+		return fmt.Errorf("shares indexes: %w", err)
 	}
 	return nil
 }

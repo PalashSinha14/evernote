@@ -41,13 +41,15 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	userRepo := db.NewUserRepo(mongoClient.DB)
 	revokedRepo := db.NewRevokedTokenRepo(mongoClient.DB)
 	noteRepo := db.NewNoteRepo(mongoClient.DB)
+	shareRepo := db.NewShareRepo(mongoClient.DB)
 
 	authHandler := handlers.NewAuthHandler(userRepo, revokedRepo, cfg)
 	healthHandler := handlers.NewHealthHandler(mongoClient)
 	noteHandler := handlers.NewNoteHandler(noteRepo)
+	shareHandler := handlers.NewShareHandler(noteRepo, shareRepo, cfg)
 
 	app := &App{cfg: cfg, mongo: mongoClient}
-	app.Router = app.buildRouter(authHandler, healthHandler, noteHandler, revokedRepo)
+	app.Router = app.buildRouter(authHandler, healthHandler, noteHandler, shareHandler, revokedRepo)
 	return app, nil
 }
 
@@ -56,17 +58,23 @@ func (a *App) buildRouter(
 	auth *handlers.AuthHandler,
 	health *handlers.HealthHandler,
 	notes *handlers.NoteHandler,
+	shares *handlers.ShareHandler,
 	revoked *db.RevokedTokenRepo,
 ) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	// requireAuth is applied per route group rather than globally, because the
-	// public share endpoint added in a later phase must stay reachable without
-	// a token.
+	// requireAuth is applied per route group rather than globally, because
+	// GET /s/:token below must stay reachable by a visitor with no account at
+	// all — that is the entire point of a share link.
 	requireAuth := middleware.RequireAuth(a.cfg.JWTSecret, revoked)
 
 	router.GET("/healthz", health.Healthz)
+
+	// The one public, unauthenticated read path in the service. It lives
+	// outside /api/v1 because api_spec.md defines it there: GET /s/:token,
+	// not GET /api/v1/s/:token.
+	router.GET("/s/:token", shares.Access)
 
 	v1 := router.Group("/api/v1")
 	{
@@ -87,6 +95,7 @@ func (a *App) buildRouter(
 			noteGroup.GET("/:id", notes.Get)
 			noteGroup.PUT("/:id", notes.Update)
 			noteGroup.DELETE("/:id", notes.Delete)
+			noteGroup.POST("/:id/share", shares.Create)
 		}
 	}
 

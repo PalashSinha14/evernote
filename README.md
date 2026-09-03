@@ -93,6 +93,8 @@ Base path `/api/v1`. Protected endpoints require `Authorization: Bearer <token>`
 | `PUT` | `/api/v1/notes/:id` | yes | Update a note, all fields optional |
 | `DELETE` | `/api/v1/notes/:id` | yes | Soft-delete a note |
 | `GET` | `/api/v1/tags` | yes | Every tag used across your notes |
+| `POST` | `/api/v1/notes/:id/share` | yes | Mint a public, read-only share link |
+| `GET` | `/s/:share_token` | — | Read a shared note. No `/api/v1` prefix — public and unauthenticated |
 
 #### Listing query parameters
 
@@ -118,9 +120,37 @@ GET /api/v1/notes?q=milk&tag=shopping&page=2&limit=10&sort=-created_at
 `meta.total` is the size of the whole result set, not of the page, so a client
 can work out how many pages there are.
 
-### Planned
+#### Sharing
 
-`POST /notes/:id/share` and the public `GET /s/:share_token`.
+```bash
+curl -X POST localhost:8080/api/v1/notes/$NOTE_ID/share \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"expires_in": 86400, "password": "let-me-in"}'
+```
+
+```json
+{ "share_id": "68b7...", "url": "http://localhost:8080/s/9f2a...", "expires_at": "2026-09-04T00:00:00Z" }
+```
+
+Both fields are optional; an empty body mints a link with no expiry and no
+password. `share_id` is the share record's own id — the token only ever
+appears embedded in `url`, never as a second top-level field.
+
+Reading it back needs no `Authorization` header. If the share is password
+protected, the password goes in an `X-Share-Password` header rather than a
+query parameter, since a query string ends up in access logs, browser history
+and `Referer` headers, none of which a password belongs in.
+
+```bash
+curl localhost:8080/s/9f2a... -H 'X-Share-Password: let-me-in'
+```
+
+The response is a read-only projection — title, body, tags, timestamps — with
+no id, owner or `is_public` field, so a visitor holding a valid link learns
+nothing about the account behind it. A note that the owner has since deleted
+stops resolving through every one of its share links automatically: the note
+lookup behind the scenes filters out soft-deleted notes, so there is nothing
+extra to clean up when a note is removed.
 
 ### Errors
 
@@ -175,6 +205,13 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
   expose, and every sort is one the indexes support.
 - Listing is scoped by `owner_id` inside the query itself, not by filtering
   results afterwards.
+- A share-link password goes in a request header, never a query parameter, to
+  keep it out of logs, browser history and `Referer` headers.
+- A share's password is checked, and the note it points to is confirmed to
+  still exist, before the click counter increments — a wrong password or a
+  dangling reference is never counted as a read.
+- `share_id` in the create-share response is the share's own database id, not
+  the token. The token is exposed exactly once, embedded in `url`.
 
 ## Roadmap
 
@@ -182,6 +219,6 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
    JWT, auth middleware, signup/login/logout/me. **Complete.**
 2. **Notes CRUD with ownership enforcement.** **Complete.**
 3. **Listing, full-text search, tag filtering, pagination and sorting.** **Complete.**
-4. Public share links with an optional password and optional expiry.
+4. **Public share links with an optional password and optional expiry.** **Complete.**
 5. Logging, CORS and rate-limiting middleware.
 6. Tests, Dockerfile and AWS deployment.
