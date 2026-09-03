@@ -8,10 +8,45 @@ read-only share link that works without an account.
 Backend only: there is no frontend. The deliverable is the API, its data model,
 and the operational scaffolding around it.
 
-**Status: feature-complete.** All six phases of the roadmap below are done —
-auth, notes CRUD, search and tagging, public sharing, middleware hardening,
-and tests/Docker/deployment artifacts. The one open item is listed under
-[Testing](#testing): nothing has yet been run against a real MongoDB instance.
+**Status: feature-complete.** Every feature below is implemented and tested.
+The one open item is under [Testing](#testing): nothing has yet been run
+against a real MongoDB instance.
+
+- [Features](#features)
+- [Stack](#stack)
+- [Project layout](#project-layout)
+- [Running it](#running-it)
+- [API](#api)
+- [Security notes](#security-notes)
+- [Testing](#testing)
+- [Deployment](#deployment)
+
+## Features
+
+- **Authentication** — signup, login, and real logout: each JWT carries a
+  unique `jti`, and logging out records it in a denylist the auth middleware
+  checks on every request, so a logged-out token stops working immediately
+  rather than just expiring on its own schedule. Passwords are hashed with
+  bcrypt; tokens are signed HS256.
+- **Notes CRUD** — create, read, update (every field optional, so a partial
+  update can't silently reset a field it didn't mention), and soft delete.
+  Ownership is enforced through one shared code path on every request, not
+  re-checked ad hoc per handler.
+- **Listing, search and tags** — full-text search across title and body, tag
+  filtering, pagination with an accurate total, sorting against an allowlist,
+  and a tag-aggregation endpoint.
+- **Public sharing** — a note can be turned into a read-only link that works
+  with no account at all, with an optional password (checked via a header,
+  never a query parameter) and an optional expiry. Click counting and
+  soft-delete-awareness are both handled correctly by construction, not as
+  special cases.
+- **Middleware** — structured request logging, CORS, rate limiting on the
+  endpoints that need it, and panic recovery that returns the same error
+  envelope as every other failure rather than a bare 500.
+- **Tests and deployment** — unit tests and handler-level tests run through
+  the real router against fake stores, a two-stage Dockerfile, a
+  docker-compose stack for local development, a Makefile, and AWS ECS
+  deployment artifacts.
 
 ## Stack
 
@@ -267,7 +302,7 @@ curl localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
 
 ```bash
 go test ./...          # everything
-go test -race ./...     # with the race detector — clean as of Phase 6
+go test -race ./...     # with the race detector — clean
 ```
 
 Every handler-level test runs against a fake, in-memory store through the
@@ -305,12 +340,3 @@ creates on every boot, standalone, for pre-warming a production database
 ahead of a deploy — see the script's own header for why this is optional
 rather than required.
 
-## Roadmap
-
-1. **Foundation and auth** — layout, config, MongoDB, error envelope, bcrypt,
-   JWT, auth middleware, signup/login/logout/me. **Complete.**
-2. **Notes CRUD with ownership enforcement.** **Complete.**
-3. **Listing, full-text search, tag filtering, pagination and sorting.** **Complete.**
-4. **Public share links with an optional password and optional expiry.** **Complete.**
-5. **Logging, CORS, rate limiting and envelope-consistent panic recovery.** **Complete.**
-6. **Unit and handler tests, Docker, and AWS deployment artifacts.** **Complete.**
